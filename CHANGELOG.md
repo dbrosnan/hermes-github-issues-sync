@@ -6,6 +6,16 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-11-02
+
+### Fixed
+
+- `gh` ran with the launch process's `GH_TOKEN` when the assignee profile had no gh credentials
+  of its own. Hermes loads its `.env` into the process, so that token belongs to the launch
+  profile, not to the assignee. The launch process's `GH_TOKEN`, `GITHUB_TOKEN` and
+  `GH_CONFIG_DIR` are now dropped for a different profile, and `gh` uses its stored login
+  unless `require_profile_login` is on.
+
 ## [0.1.0] - 2026-11-02
 
 ### Added
@@ -27,5 +37,6 @@ All notable changes to this project are documented here. The format follows
   one, the way Hermes's completion-contract gate does. `require_profile_login` makes a profile
   without its own login an error instead of a fallback to the ambient login.
 
-[Unreleased]: https://github.com/dbrosnan/hermes-github-issues-sync/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/dbrosnan/hermes-github-issues-sync/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/dbrosnan/hermes-github-issues-sync/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/dbrosnan/hermes-github-issues-sync/releases/tag/v0.1.0

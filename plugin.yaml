@@ -1,5 +1,5 @@
 name: github-issues-sync
-version: 0.1.0
+version: 0.1.1
 description: "Mirror agent-ready GitHub issues onto the Hermes kanban board, one card per issue, and report claims, handoffs and blocks back on the issue. Pull-based through the gh CLI; the merged PR closes the issue."
 author: Drew Brosnan
 kind: standalone
@@ -31,7 +31,7 @@ config_schema:
   summary_chars: {type: int, default: 2000, label: "Summary length", description: "Characters of the handoff summary or block reason posted on the issue."}
   card_template: {type: str, default: "", label: "Card template", description: "Custom card body template. Empty uses the built-in one."}
   created_by: {type: str, default: "github-issues-sync", label: "Created by", description: "Author recorded on cards and card comments."}
-  require_profile_login: {type: bool, default: false, label: "Require profile gh login", description: "Fail instead of using the ambient gh login when the assignee profile has no GH_TOKEN or GH_CONFIG_DIR of its own."}
+  require_profile_login: {type: bool, default: false, label: "Require profile gh login", description: "Fail instead of letting gh use its own stored login when the assignee profile has no GH_TOKEN or GH_CONFIG_DIR of its own."}
   command_timeout_seconds: {type: int, default: 30, label: "Command timeout", description: "Seconds allowed for each gh or hermes command."}
   gh_bin: {type: str, default: "gh", label: "gh command", description: "The gh executable."}
   hermes_bin: {type: str, default: "hermes", label: "hermes command", description: "The hermes executable."}

@@ -34,10 +34,11 @@ def test_profile_credentials_replace_ambient_ones():
     assert env["PATH"] == "/bin"
 
 
-def test_missing_credentials_fall_back_unless_strict(caplog):
+def test_missing_credentials_fall_back_to_gh_login_unless_strict(caplog):
     ident = ProfileIdentity(Path("/h/p"), False, {})
     env = gh_env_for_profile("p", environ=AMBIENT, resolver=resolver_for(ident))
-    assert env["GH_TOKEN"] == "ambient"
+    assert "GH_TOKEN" not in env  # the launch process's token is dropped; gh uses its own login
+    assert env["PATH"] == "/bin"
     strict = gh_env_for_profile(
         "p", environ=AMBIENT, require_login=True, resolver=resolver_for(ident)
     )

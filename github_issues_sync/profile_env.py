@@ -8,8 +8,10 @@ opens a ``.env`` file itself.
 
 When the profile has no gh credentials of its own, the gate fails closed. A sync plugin that
 silently did nothing would be worse than one that used the host's login, so the default here is
-to fall back to the ambient login and say so in the log; ``require_profile_login: true`` restores
-the gate's behaviour.
+to let ``gh`` use its own stored login (``gh auth status``) and say so in the log;
+``require_profile_login: true`` restores the gate's behaviour. In both cases the launch process's
+``GH_TOKEN`` / ``GITHUB_TOKEN`` / ``GH_CONFIG_DIR`` are dropped first: Hermes loads its own
+``.env`` into the process, and that token belongs to the launch profile, not to the assignee.
 """
 
 from __future__ import annotations
@@ -80,19 +82,17 @@ def gh_env_for_profile(
             "github-issues-sync: profile %r not found; using the ambient gh login", profile
         )
         return base
+    for name in GH_VARS:
+        base.pop(name, None)  # the launch profile's token is not this profile's identity
     own = {name: identity.secrets[name] for name in GH_VARS if identity.secrets.get(name)}
     if own:
-        for name in GH_VARS:
-            base.pop(name, None)
         base.update(own)
         return base
     if require_login:
-        for name in GH_VARS:
-            base.pop(name, None)
         base["GH_CONFIG_DIR"] = str(identity.home / "gh")  # no login there: gh exits 4
         return base
     logger.debug(
-        "github-issues-sync: profile %r has no GH_TOKEN or GH_CONFIG_DIR; using the ambient login",
+        "github-issues-sync: profile %r has no GH_TOKEN or GH_CONFIG_DIR; using gh's own login",
         profile,
     )
     return base

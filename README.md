@@ -131,7 +131,7 @@ Desktop app under Settings → Plugins → github-issues-sync.
 | `summary_chars` | `2000` | Characters of the handoff summary or block reason posted on the issue. |
 | `card_template` | built-in | Card body template. Fields: `{url}`, `{repo}`, `{number}`, `{title}`, `{body}`, `{branch}`, `{workspace}`, `{assignee}`, `{in_progress_label}`, `{blocked_label}`. A `Source issue:` line is added if the template lacks one. |
 | `created_by` | `github-issues-sync` | Author recorded on cards and card comments. |
-| `require_profile_login` | `false` | Fail instead of using the ambient `gh` login when the assignee profile has no `GH_TOKEN` or `GH_CONFIG_DIR` of its own. |
+| `require_profile_login` | `false` | Fail instead of letting `gh` use its stored login when the assignee profile has no `GH_TOKEN` or `GH_CONFIG_DIR` of its own. |
 | `command_timeout_seconds` | `30` | Seconds allowed for each `gh` command (`hermes` commands get twice that). |
 | `gh_bin`, `hermes_bin` | `gh`, `hermes` | The executables to run. |
 
@@ -205,9 +205,12 @@ interval has passed, and never when the dispatcher itself is in dry-run mode.
 profile, with that profile's own `GH_TOKEN` or `GH_CONFIG_DIR`. This plugin does the same:
 it resolves the profile home through `hermes_constants` and reads the profile's secrets through
 `agent.secret_scope`, then overlays `GH_TOKEN`, `GITHUB_TOKEN` and `GH_CONFIG_DIR` on the
-environment it gives `gh`. A profile with none of them uses the ambient `gh` login (the one
-`gh auth status` shows) and says so in the log at debug level; set `require_profile_login: true`
-to fail closed instead, as the gate does.
+environment it gives `gh`. The launch process's own `GH_TOKEN`, `GITHUB_TOKEN` and
+`GH_CONFIG_DIR` are dropped first, because Hermes loads its `.env` into its process and that
+token belongs to the launch profile, not to the assignee. A profile with no gh credentials of
+its own leaves `gh` to its stored login (the one `gh auth status` shows) and says so in the log
+at debug level; set `require_profile_login: true` to fail closed instead, as the gate does. When
+the assignee is the profile the process runs as, the environment is used unchanged.
 
 ### Working an issue, from the card
 
@@ -242,7 +245,8 @@ want a fresh one (`hermes kanban archive <id>`).
 - **What reaches the board:** the issue body, verbatim, inside the card body, plus the issue
   URL, repository and workspace path.
 - **Credentials:** none are read or stored. The plugin picks which profile's environment `gh`
-  runs with, via Hermes's `agent.secret_scope`, and `gh` does its own authentication.
+  runs with, via Hermes's `agent.secret_scope`, drops the launch process's gh variables for a
+  different profile, and `gh` does its own authentication.
 - **Shell commands:** `gh` and `hermes`, from PATH (or `gh_bin` / `hermes_bin`), always as
   argument lists, never through a shell. Card bodies go to `hermes` through a temporary file
   that is deleted after the call.
@@ -258,7 +262,7 @@ want a fresh one (`hermes kanban archive <id>`).
 |---|---|
 | `no repositories configured` | Add `repos` under `plugins.entries.github-issues-sync.settings`. |
 | `no assignee profile` or `no workspace` | Set `assignee` and `workspace_root` globally, or `assignee` and `workspace` on the repo entry. |
-| `gh issue list ... failed (exit 4)` | `gh` has no login in that environment. Run `gh auth login`, or give the assignee profile a `GH_TOKEN`. |
+| `gh issue list ... failed (exit 4)` | `gh` has no stored login. Run `gh auth login`, or put a `GH_TOKEN` in the assignee profile's `.env` (a `GH_TOKEN` in the launch profile's `.env` is deliberately not used for a different profile). |
 | `HTTP 404` on a private repo | The `gh` login cannot see the repository. Check `gh auth status` and the token's scopes. |
 | Cards appear but nothing claims them | The dispatcher is not running, or the assignee profile does not exist. `hermes kanban diagnostics`. |
 | No comments on the issue after a handoff | The worker profile does not load the plugin. The next sync posts it; or install the plugin in that profile. |
