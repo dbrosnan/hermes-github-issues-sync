@@ -1,5 +1,5 @@
 name: github-issues-sync
-version: 0.1.1
+version: 0.2.0
 description: "Mirror agent-ready GitHub issues onto the Hermes kanban board, one card per issue, and report claims, handoffs and blocks back on the issue. Pull-based through the gh CLI; the merged PR closes the issue."
 author: Drew Brosnan
 kind: standalone

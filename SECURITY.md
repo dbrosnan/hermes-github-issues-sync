@@ -4,7 +4,7 @@
 
 | Version | Supported |
 |---|---|
-| 0.1.x | Yes |
+| 0.2.x | Yes |
 
 Only the latest release gets fixes. The Hermes catalog pins one commit, so a fix reaches
 catalog users after the pin is updated. See [docs/RELEASING.md](docs/RELEASING.md).
