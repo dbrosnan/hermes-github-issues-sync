@@ -23,7 +23,7 @@ git clone https://github.com/dbrosnan/hermes-github-issues-sync
 cd hermes-github-issues-sync
 uvx --with pytest-cov pytest --cov=. tests   # tests, no Hermes or GitHub needed
 uvx ruff check . && uvx ruff format --check .
-hermes plugins validate .                    # the same check the Hermes catalog runs
+hermes plugins validate . --install-deps     # the same check the Hermes catalog runs
 ```
 
 To try a change against your own Hermes:
@@ -40,7 +40,7 @@ hermes github-issues-sync sync --dry-run
   `docs: ...`).
 - Tests for any behaviour change. CI requires 80% coverage, and the project sits above 90%.
 - `uvx ruff check .` and the tests pass.
-- `hermes plugins validate .` passes, if you have Hermes installed.
+- `hermes plugins validate . --install-deps` passes, if you have Hermes installed.
 - If you add a hook or setting, update `plugin.yaml` (declared capabilities must match what
   the code registers) and the README's settings and disclosure sections.
 - Add a line under **Unreleased** in [CHANGELOG.md](CHANGELOG.md).
