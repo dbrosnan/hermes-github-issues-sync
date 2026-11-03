@@ -78,15 +78,16 @@ class Puller:
     ) -> int:
         s = self._settings
         try:
-            env = self._env_for(repo.assignee)
+            env = self._env_for(repo.identity_profile)
             issues = self._gh.list_ready_issues(repo.repo, s.ready_label, s.issue_limit, env=env)
         except (GhError, ProfileLoginError) as exc:
             report.errors.append(f"{repo.repo}: {exc}")
             return budget
         report.repos.append((repo.repo, len(issues)))
-        candidates, skipped = select_candidates(issues, s, mirrored)
+        candidates, skipped = select_candidates(issues, repo, s, mirrored)
         report.skipped.extend(skipped)
-        for issue in candidates:
+        for candidate in candidates:
+            issue, assignee = candidate.issue, candidate.assignee
             ref = IssueRef(issue.repo, issue.number)
             if budget <= 0:
                 report.skipped.append(Skipped(ref, "max_cards_per_sync reached"))
@@ -94,14 +95,14 @@ class Puller:
             title = card_title(issue)
             branch = branch_for(repo, issue.number)
             if dry_run:
-                report.created.append(Created(ref, title, None, branch, repo.assignee))
+                report.created.append(Created(ref, title, None, branch, assignee))
                 budget -= 1
                 continue
             try:
                 card = self._board.create(
                     title=title,
-                    body=render_card_body(issue, repo, s),
-                    assignee=repo.assignee,
+                    body=render_card_body(issue, repo, s, assignee=assignee),
+                    assignee=assignee,
                     workspace=repo.workspace,
                     branch=branch,
                     idempotency_key=ref.idempotency_key,
@@ -112,7 +113,7 @@ class Puller:
                 report.errors.append(f"{ref.short}: {exc}")
                 continue
             mirrored[ref] = card
-            report.created.append(Created(ref, title, card.id, branch, repo.assignee))
+            report.created.append(Created(ref, title, card.id, branch, assignee))
             logger.info("github-issues-sync: created card %s for %s", card.id, ref.short)
             budget -= 1
         if s.reconcile:

@@ -92,3 +92,34 @@ def test_string_and_none_values_are_coerced():
     assert s.push_events == {"claimed"}
     assert s.board == ""
     assert s.issue_limit == 100
+
+
+def test_lanes_merge_per_repo_over_global_and_make_assignee_optional():
+    s = load_settings(
+        getter(
+            {
+                "assignee": "",
+                "lanes": {"lane:code": "opus", "lane:docs": "librarian"},
+                "repos": [{"repo": "acme/api", "lanes": {"lane:docs": "writer"}}],
+            }
+        )
+    )
+    repo = s.repos[0]
+    assert repo.assignee == ""
+    assert dict(repo.lanes) == {"lane:code": "opus", "lane:docs": "writer"}
+    assert repo.identity_profile == "opus"  # no assignee: the lane whose label sorts first
+    assert load_settings(getter()).repos[0].identity_profile == "coder"
+
+
+@pytest.mark.parametrize(
+    "overrides,message",
+    [
+        ({"assignee": "", "lanes": {}}, "no assignee profile; set assignee or lanes"),
+        ({"lanes": "lane:code=opus"}, "lanes must be a map"),
+        ({"lanes": {"lane:code": ""}}, "needs both a label and a profile"),
+        ({"repos": [{"repo": "acme/api", "lanes": {"": "opus"}}]}, "acme/api: lanes"),
+    ],
+)
+def test_lane_errors(overrides, message):
+    with pytest.raises(ConfigError, match=message):
+        load_settings(getter(overrides))

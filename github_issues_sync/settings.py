@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 LOCAL_ONLY = "local-only"
@@ -23,6 +23,7 @@ DEFAULTS: dict[str, Any] = {
     "repos": [],
     "assignee": "",
     "workspace_root": "",
+    "lanes": {},
     "board": "",
     "ready_label": "agent-ready",
     "in_progress_label": "in-progress",
@@ -76,6 +77,21 @@ def as_str(value: Any, default: str) -> str:
     return default if value is None else str(value).strip()
 
 
+def as_map(value: Any, what: str) -> dict[str, str]:
+    """A ``label: profile`` map. Empty keys or values are a config error, not a silent skip."""
+    if value is None or value == "":
+        return {}
+    if not isinstance(value, Mapping):
+        raise ConfigError(f"{what} must be a map of issue label to Hermes profile")
+    result: dict[str, str] = {}
+    for key, profile in value.items():
+        label, name = str(key).strip(), as_str(profile, "")
+        if not label or not name:
+            raise ConfigError(f"{what}: entry {key!r} needs both a label and a profile")
+        result[label] = name
+    return result
+
+
 def validate_contract(value: str) -> str:
     if value in ("", LOCAL_ONLY):
         return LOCAL_ONLY
@@ -96,15 +112,22 @@ def normalize_workspace(value: str) -> str:
 @dataclass(frozen=True)
 class RepoSettings:
     repo: str
-    assignee: str
+    assignee: str  # the fallback profile; empty when every card is routed by a lane label
     workspace: str
     completion_contract: str
     branch_prefix: str
     max_runtime: str
+    lanes: Mapping[str, str] = field(default_factory=dict)  # issue label -> Hermes profile
 
     @property
     def name(self) -> str:
         return self.repo.split("/", 1)[1]
+
+    @property
+    def identity_profile(self) -> str:
+        """The profile whose gh identity reads the issue list: the assignee, else the lane whose
+        label sorts first."""
+        return self.assignee or (self.lanes[min(self.lanes)] if self.lanes else "")
 
 
 @dataclass(frozen=True)
@@ -147,8 +170,11 @@ def _repo_settings(entry: Any, get: Callable[[str], Any]) -> RepoSettings:
     if not REPO_RE.match(repo):
         raise ConfigError(f"repos entry {repo!r} is not owner/repo")
     assignee = as_str(entry.get("assignee"), "") or as_str(get("assignee"), "")
-    if not assignee:
-        raise ConfigError(f"{repo}: no assignee profile; set assignee globally or on the repo")
+    lanes = {**as_map(get("lanes"), "lanes"), **as_map(entry.get("lanes"), f"{repo}: lanes")}
+    if not assignee and not lanes:
+        raise ConfigError(
+            f"{repo}: no assignee profile; set assignee or lanes globally or on the repo"
+        )
     workspace = as_str(entry.get("workspace"), "")
     root = as_str(get("workspace_root"), "")
     if workspace:
@@ -171,6 +197,7 @@ def _repo_settings(entry: Any, get: Callable[[str], Any]) -> RepoSettings:
         completion_contract=contract,
         branch_prefix=as_str(entry.get("branch_prefix"), "") or as_str(get("branch_prefix"), ""),
         max_runtime=max_runtime,
+        lanes=lanes,
     )
 
 

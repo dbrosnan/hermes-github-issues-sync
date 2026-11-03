@@ -231,10 +231,13 @@ class Plugin:
             lines.append("repos: none configured")
         for repo in s.repos:
             lines.append(
-                f"repo {repo.repo}: assignee {repo.assignee}, workspace {repo.workspace}, "
-                f"branch {repo.branch_prefix}<n>, contract {repo.completion_contract}, "
-                f"max runtime {repo.max_runtime}"
+                f"repo {repo.repo}: assignee {repo.assignee or '(by lane only)'}, "
+                f"workspace {repo.workspace}, branch {repo.branch_prefix}<n>, "
+                f"contract {repo.completion_contract}, max runtime {repo.max_runtime}"
             )
+            if repo.lanes:
+                routes = ", ".join(f"`{label}` -> {prof}" for label, prof in repo.lanes.items())
+                lines.append(f"  lanes: {routes}")
         lines.append(
             f"labels: ready `{s.ready_label}`, in progress `{s.in_progress_label}`, "
             f"blocked `{s.blocked_label}`, skip {list(s.skip_labels)}"

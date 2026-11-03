@@ -12,8 +12,9 @@ tags: [github, issues, kanban, automation]
 provides_hooks: [kanban_task_claimed, kanban_task_completed, kanban_task_blocked, on_kanban_dispatch_tick]
 config_schema:
   repos: {type: list, default: [], label: "Repositories", description: "GitHub repositories to mirror, as owner/repo strings or {repo, workspace, assignee, completion_contract} maps."}
-  assignee: {type: str, default: "", label: "Assignee profile", description: "Hermes profile that works the cards. Required unless every repo sets its own."}
+  assignee: {type: str, default: "", label: "Assignee profile", description: "Hermes profile that works cards no lane label routes. Required unless lanes or every repo sets its own."}
   workspace_root: {type: str, default: "", label: "Workspace root", description: "Directory holding one checkout per repo (<root>/<repo name>). Cards get a worktree of that checkout. Required unless every repo sets workspace."}
+  lanes: {type: dict, default: {}, label: "Lanes", description: "Issue label to Hermes profile, consulted before assignee: an issue with exactly one of these labels is routed to that profile; with two it is skipped and reported. Per-repo maps can add or override entries."}
   board: {type: str, default: "", label: "Board", description: "Kanban board slug for the cards. Empty uses the current board."}
   ready_label: {type: str, default: "agent-ready", label: "Ready label", description: "Only open issues with this label are mirrored."}
   in_progress_label: {type: str, default: "in-progress", label: "In-progress label", description: "Added when a card is claimed. Issues already carrying it are not mirrored."}

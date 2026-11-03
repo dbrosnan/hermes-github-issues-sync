@@ -136,3 +136,26 @@ def test_only_repo_filter_and_empty_config(fake_cli):
     gh, board = GhClient(), HermesBoard()
     report = Puller(s, gh, board, Pusher(s, gh, board, env_for), env_for).run()
     assert "no repositories configured" in report.errors[0]
+
+
+def test_lane_labels_pick_the_card_assignee(fake_cli):
+    fake_cli.respond(
+        "issue",
+        "list",
+        stdout=[
+            issue(1, labels=("agent-ready", "lane:docs")),
+            issue(2, labels=("agent-ready", "lane:docs", "lane:code")),
+            issue(3),
+        ],
+    )
+    fake_cli.respond("kanban", "list", stdout=[])
+    fake_cli.respond("kanban", "create", stdout=card("t_1", 1))
+    lanes = {"lane:code": "opus", "lane:docs": "librarian"}
+    report = puller(fake_cli, reconcile=False, lanes=lanes).run()
+    assert report.ok
+    assert [(c.ref.number, c.assignee) for c in report.created] == [(1, "librarian"), (3, "coder")]
+    assert [s.ref.number for s in report.skipped] == [2]
+    assert "keep one" in report.render()
+    creates = fake_cli.calls_for("hermes", "create")
+    assert creates[0]["argv"][creates[0]["argv"].index("--assignee") + 1] == "librarian"
+    assert creates[1]["argv"][creates[1]["argv"].index("--assignee") + 1] == "coder"
