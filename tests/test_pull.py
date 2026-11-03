@@ -96,6 +96,17 @@ def test_reconcile_posts_missed_events_for_existing_cards(fake_cli):
     assert "posted completed on acme/widgets#9" in report.render()
 
 
+def test_dry_run_reconcile_reports_but_posts_nothing(fake_cli):
+    fake_cli.respond("issue", "list", stdout=[])
+    fake_cli.respond("kanban", "list", stdout=[card("t_run", 9, status="running")])
+    fake_cli.respond("kanban", "show", "t_run", stdout=show(card("t_run", 9, status="running")))
+    fake_cli.respond("issue", "view", stdout={"state": "OPEN", "labels": [], "comments": []})
+    report = puller(fake_cli).run(dry_run=True)
+    assert [(p.event, p.action) for p in report.pushed] == [("claimed", "would post")]
+    assert fake_cli.calls_for("gh", "edit") == [] and fake_cli.calls_for("gh", "comment") == []
+    assert "would post claimed on acme/widgets#9" in report.render()
+
+
 def test_errors_are_reported_not_raised(fake_cli):
     fake_cli.respond("kanban", "list", rc=1, stderr="db locked")
     report = puller(fake_cli).run()
