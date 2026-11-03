@@ -263,7 +263,15 @@ class Puller:
             return budget
         spec = self._spec(wanted, repo, parents)
         record = Created(
-            ref, spec.title, None, spec.branch, spec.assignee, wanted.kind, board.board, parents
+            ref,
+            spec.title,
+            None,
+            spec.branch,
+            spec.assignee,
+            wanted.kind,
+            board.board,
+            parents,
+            wanted.reason,
         )
         if dry_run:
             report.created.append(record)
@@ -287,6 +295,7 @@ class Puller:
                 wanted.kind,
                 board.board,
                 parents,
+                wanted.reason,
             )
         )
         logger.info(

@@ -20,6 +20,7 @@ class Created:
     kind: str = "task"
     board: str = ""
     parents: tuple[str, ...] = ()  # card ids an epic card waits on
+    detail: str = ""  # the GitHub stage a placeholder mirrors
 
 
 @dataclass(frozen=True)
@@ -89,7 +90,7 @@ class SyncReport:
             elif item.kind == "epic":
                 what = f"(epic, waits on {len(item.parents)} sub-issue cards)"
             else:
-                what = f"(placeholder: {item.assignee})"
+                what = f"(placeholder, {item.detail or 'open'})"
             kind = "" if self.mirror == "ready-only" else f" {item.kind}"
             lines.append(
                 f"  {verb}{kind}: {item.ref.short} {item.title.split(': ', 1)[-1]!r}"
@@ -130,6 +131,7 @@ class SyncReport:
                     "kind": c.kind,
                     "board": c.board,
                     "parents": list(c.parents),
+                    "detail": c.detail,
                 }
                 for c in self.created
             ],
