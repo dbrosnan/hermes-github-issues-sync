@@ -96,6 +96,17 @@ def test_reconcile_posts_missed_events_for_existing_cards(fake_cli):
     assert "posted completed on acme/widgets#9" in report.render()
 
 
+def test_dry_run_reconcile_reports_but_posts_nothing(fake_cli):
+    fake_cli.respond("issue", "list", stdout=[])
+    fake_cli.respond("kanban", "list", stdout=[card("t_run", 9, status="running")])
+    fake_cli.respond("kanban", "show", "t_run", stdout=show(card("t_run", 9, status="running")))
+    fake_cli.respond("issue", "view", stdout={"state": "OPEN", "labels": [], "comments": []})
+    report = puller(fake_cli).run(dry_run=True)
+    assert [(p.event, p.action) for p in report.pushed] == [("claimed", "would post")]
+    assert fake_cli.calls_for("gh", "edit") == [] and fake_cli.calls_for("gh", "comment") == []
+    assert "would post claimed on acme/widgets#9" in report.render()
+
+
 def test_errors_are_reported_not_raised(fake_cli):
     fake_cli.respond("kanban", "list", rc=1, stderr="db locked")
     report = puller(fake_cli).run()
@@ -125,3 +136,26 @@ def test_only_repo_filter_and_empty_config(fake_cli):
     gh, board = GhClient(), HermesBoard()
     report = Puller(s, gh, board, Pusher(s, gh, board, env_for), env_for).run()
     assert "no repositories configured" in report.errors[0]
+
+
+def test_lane_labels_pick_the_card_assignee(fake_cli):
+    fake_cli.respond(
+        "issue",
+        "list",
+        stdout=[
+            issue(1, labels=("agent-ready", "lane:docs")),
+            issue(2, labels=("agent-ready", "lane:docs", "lane:code")),
+            issue(3),
+        ],
+    )
+    fake_cli.respond("kanban", "list", stdout=[])
+    fake_cli.respond("kanban", "create", stdout=card("t_1", 1))
+    lanes = {"lane:code": "opus", "lane:docs": "librarian"}
+    report = puller(fake_cli, reconcile=False, lanes=lanes).run()
+    assert report.ok
+    assert [(c.ref.number, c.assignee) for c in report.created] == [(1, "librarian"), (3, "coder")]
+    assert [s.ref.number for s in report.skipped] == [2]
+    assert "keep one" in report.render()
+    creates = fake_cli.calls_for("hermes", "create")
+    assert creates[0]["argv"][creates[0]["argv"].index("--assignee") + 1] == "librarian"
+    assert creates[1]["argv"][creates[1]["argv"].index("--assignee") + 1] == "coder"

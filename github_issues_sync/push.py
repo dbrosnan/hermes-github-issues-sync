@@ -220,18 +220,18 @@ class Pusher:
     def reconcile(self, card: Card, *, dry_run: bool = False) -> PushResult | None:
         """Post whatever a card's current state implies, if it has not been posted yet."""
         if card.status == "running":
-            return self._reconcile_with(self.claimed, card)
+            return self._reconcile_with(self.claimed, card, dry_run)
         if card.status in ("review", "done"):
-            return self._reconcile_with(self.completed, card)
+            return self._reconcile_with(self.completed, card, dry_run)
         if card.status == "blocked":
-            return self._reconcile_with(self.blocked, card)
+            return self._reconcile_with(self.blocked, card, dry_run)
         return None
 
     def _reconcile_with(
-        self, method: Callable[..., PushResult | None], card: Card
+        self, method: Callable[..., PushResult | None], card: Card, dry_run: bool
     ) -> PushResult | None:
         show = self._board.show(card.id)
-        return method(card.id, latest_run_id(show), assignee=card.assignee)
+        return method(card.id, latest_run_id(show), assignee=card.assignee, dry_run=dry_run)
 
     def _post(
         self,

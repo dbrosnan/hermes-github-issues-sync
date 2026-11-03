@@ -79,7 +79,9 @@ def branch_for(repo: RepoSettings, number: int) -> str:
     return f"{repo.branch_prefix}{number}"
 
 
-def render_card_body(issue: Issue, repo: RepoSettings, settings: Settings) -> str:
+def render_card_body(
+    issue: Issue, repo: RepoSettings, settings: Settings, *, assignee: str | None = None
+) -> str:
     fields: dict[str, Any] = {
         "url": issue.url,
         "repo": issue.repo,
@@ -88,7 +90,7 @@ def render_card_body(issue: Issue, repo: RepoSettings, settings: Settings) -> st
         "body": issue.body.strip(),
         "branch": branch_for(repo, issue.number),
         "workspace": repo.workspace,
-        "assignee": repo.assignee,
+        "assignee": repo.assignee if assignee is None else assignee,
         "in_progress_label": settings.in_progress_label,
         "blocked_label": settings.blocked_label,
     }
