@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from .board import Card, HermesBoard
-from .cards import IssueRef, parse_card_ref
+from .cards import TASK, IssueRef, card_kind, parse_card_ref
 from .gh import GhClient
 from .report import PushResult
 from .settings import RepoSettings, Settings
@@ -217,21 +217,32 @@ class Pusher:
             remove=(s.in_progress_label,),
         )
 
-    def reconcile(self, card: Card, *, dry_run: bool = False) -> PushResult | None:
-        """Post whatever a card's current state implies, if it has not been posted yet."""
+    def reconcile(
+        self, card: Card, *, board: str | None = None, dry_run: bool = False
+    ) -> PushResult | None:
+        """Post whatever a card's current state implies, if it has not been posted yet.
+        Placeholder and epic cards mirror a stage, not a worker, so they post nothing."""
+        if card_kind(card.body) != TASK:
+            return None
         if card.status == "running":
-            return self._reconcile_with(self.claimed, card, dry_run)
+            return self._reconcile_with(self.claimed, card, board, dry_run)
         if card.status in ("review", "done"):
-            return self._reconcile_with(self.completed, card, dry_run)
+            return self._reconcile_with(self.completed, card, board, dry_run)
         if card.status == "blocked":
-            return self._reconcile_with(self.blocked, card, dry_run)
+            return self._reconcile_with(self.blocked, card, board, dry_run)
         return None
 
     def _reconcile_with(
-        self, method: Callable[..., PushResult | None], card: Card, dry_run: bool
+        self,
+        method: Callable[..., PushResult | None],
+        card: Card,
+        board: str | None,
+        dry_run: bool,
     ) -> PushResult | None:
-        show = self._board.show(card.id)
-        return method(card.id, latest_run_id(show), assignee=card.assignee, dry_run=dry_run)
+        show = self._board.with_board(board).show(card.id)
+        return method(
+            card.id, latest_run_id(show), assignee=card.assignee, board=board, dry_run=dry_run
+        )
 
     def _post(
         self,

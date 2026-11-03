@@ -22,8 +22,9 @@ logger = logging.getLogger("github_issues_sync")
 
 SLASH_USAGE = (
     "Usage: /gh-sync [--dry-run] [owner/repo]\n"
-    "Mirror agent-ready GitHub issues onto the kanban board and post missed card events "
-    "back on the issues. --dry-run reports without creating or posting anything."
+    "Mirror GitHub issues onto the kanban board (which issues depends on the mirror setting) "
+    "and post missed card events back on the issues. --dry-run reports without creating or "
+    "posting anything."
 )
 PUSH_ERRORS = (ConfigError, GhError, BoardError, ProfileLoginError)
 CLI_USAGE = (
@@ -193,9 +194,7 @@ class Plugin:
 
     def cli_setup(self, subparser: argparse.ArgumentParser) -> None:
         subs = subparser.add_subparsers(dest="ghis_command")
-        sync = subs.add_parser(
-            "sync", help="Mirror ready issues onto the board and reconcile cards"
-        )
+        sync = subs.add_parser("sync", help="Mirror issues onto the board and reconcile cards")
         sync.add_argument(
             "--dry-run", "-n", action="store_true", help="Report only; change nothing"
         )
@@ -226,12 +225,23 @@ class Plugin:
             s = self.settings()
         except ConfigError as exc:
             return f"configuration error: {exc}"
-        lines = ["github-issues-sync"]
+        lines = [
+            "github-issues-sync",
+            f"mirror: {s.mirror}"
+            + (
+                f" (epic label `{s.epic_label}`, placeholders in {s.placeholder_status} "
+                f"assigned to `{s.placeholder_assignee}`)"
+                if not s.ready_only
+                else ""
+            ),
+            "boards: one per repository" if s.board_per_repo else f"board: {s.board or 'current'}",
+        ]
         if not s.repos:
             lines.append("repos: none configured")
         for repo in s.repos:
             lines.append(
                 f"repo {repo.repo}: assignee {repo.assignee or '(by lane only)'}, "
+                f"board {repo.board or 'current'}, "
                 f"workspace {repo.workspace}, branch {repo.branch_prefix}<n>, "
                 f"contract {repo.completion_contract}, max runtime {repo.max_runtime}"
             )

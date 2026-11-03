@@ -15,8 +15,11 @@ LOCAL_ONLY = "local-only"
 REPO_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 PR_URL_RE = re.compile(r"^https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/pull/[1-9][0-9]*$")
 DURATION_RE = re.compile(r"^[1-9][0-9]*(s|m|h|d)?$")
+BOARD_SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
 WORKSPACE_KINDS = ("scratch", "worktree", "worktree:", "dir:")
 EVENTS = ("claimed", "completed", "blocked")
+MIRROR_MODES = ("ready-only", "tasks", "full")
+PLACEHOLDER_STATUSES = ("ready", "triage", "blocked")
 FALSE_WORDS = {"", "0", "false", "off", "no"}
 
 DEFAULTS: dict[str, Any] = {
@@ -24,7 +27,12 @@ DEFAULTS: dict[str, Any] = {
     "assignee": "",
     "workspace_root": "",
     "lanes": {},
+    "board_per_repo": True,
     "board": "",
+    "mirror": "ready-only",
+    "epic_label": "epic",
+    "placeholder_status": "ready",
+    "placeholder_assignee": "github",
     "ready_label": "agent-ready",
     "in_progress_label": "in-progress",
     "blocked_label": "blocked",
@@ -46,6 +54,13 @@ DEFAULTS: dict[str, Any] = {
     "gh_bin": "gh",
     "hermes_bin": "hermes",
 }
+BOUNDS: dict[str, tuple[int, int]] = {  # inclusive; the Desktop form has no bounds of its own
+    "max_cards_per_sync": (0, 1000),
+    "issue_limit": (1, 5000),
+    "sync_interval_seconds": (0, 86400),
+    "summary_chars": (0, 60000),
+    "command_timeout_seconds": (1, 3600),
+}
 
 
 class ConfigError(ValueError):
@@ -58,11 +73,12 @@ def as_bool(value: Any, default: bool) -> bool:
     return default if value is None else bool(value)
 
 
-def as_int(value: Any, default: int, *, minimum: int = 0) -> int:
+def as_int(value: Any, default: int, *, minimum: int = 0, maximum: int | None = None) -> int:
     try:
-        return max(minimum, int(value))
+        number = max(minimum, int(value))
     except (TypeError, ValueError):
         return default
+    return number if maximum is None else min(maximum, number)
 
 
 def as_list(value: Any, default: list) -> list:
@@ -75,6 +91,13 @@ def as_list(value: Any, default: list) -> list:
 
 def as_str(value: Any, default: str) -> str:
     return default if value is None else str(value).strip()
+
+
+def as_choice(value: Any, choices: tuple[str, ...], what: str) -> str:
+    chosen = as_str(value, choices[0]).lower() or choices[0]
+    if chosen not in choices:
+        raise ConfigError(f"{what} {chosen!r} must be one of {', '.join(choices)}")
+    return chosen
 
 
 def as_map(value: Any, what: str) -> dict[str, str]:
@@ -109,6 +132,23 @@ def normalize_workspace(value: str) -> str:
     return f"worktree:{value}"
 
 
+def checkout_path(workspace: str) -> str:
+    """The directory behind a ``worktree:<path>`` or ``dir:<path>`` spec, else empty."""
+    for prefix in ("worktree:", "dir:"):
+        if workspace.startswith(prefix):
+            return workspace[len(prefix) :]
+    return ""
+
+
+def board_slug(name: str) -> str:
+    """A Hermes board slug for a repository name: lowercase, ``[a-z0-9_-]``, 64 characters,
+    starting with a letter or digit (the rules ``hermes kanban boards create`` enforces)."""
+    slug = re.sub(r"[^a-z0-9_-]+", "-", name.lower()).strip("-_")[:64].rstrip("-_")
+    if not BOARD_SLUG_RE.match(slug):
+        raise ConfigError(f"cannot derive a board slug from repository name {name!r}; set board")
+    return slug
+
+
 @dataclass(frozen=True)
 class RepoSettings:
     repo: str
@@ -117,11 +157,17 @@ class RepoSettings:
     completion_contract: str
     branch_prefix: str
     max_runtime: str
+    board: str = ""  # board slug for this repository's cards; empty means the current board
+    board_name: str = ""  # display name used when the board has to be created
     lanes: Mapping[str, str] = field(default_factory=dict)  # issue label -> Hermes profile
 
     @property
     def name(self) -> str:
         return self.repo.split("/", 1)[1]
+
+    @property
+    def checkout(self) -> str:
+        return checkout_path(self.workspace)
 
     @property
     def identity_profile(self) -> str:
@@ -133,7 +179,12 @@ class RepoSettings:
 @dataclass(frozen=True)
 class Settings:
     repos: tuple[RepoSettings, ...]
+    board_per_repo: bool
     board: str
+    mirror: str
+    epic_label: str
+    placeholder_status: str
+    placeholder_assignee: str
     ready_label: str
     in_progress_label: str
     blocked_label: str
@@ -159,6 +210,28 @@ class Settings:
     @property
     def repo_slugs(self) -> tuple[str, ...]:
         return tuple(r.repo for r in self.repos)
+
+    @property
+    def ready_only(self) -> bool:
+        return self.mirror == "ready-only"
+
+    @property
+    def mirrors_epics(self) -> bool:
+        return self.mirror == "full"
+
+
+def _repo_board(entry: Mapping[str, Any], repo: str, get: Callable[[str], Any]) -> tuple[str, str]:
+    """``(slug, display name)`` for the repository's board."""
+    name = repo.split("/", 1)[1]
+    display = as_str(entry.get("board_name"), "") or name
+    explicit = as_str(entry.get("board"), "").lower()
+    if explicit:
+        if not BOARD_SLUG_RE.match(explicit):
+            raise ConfigError(f"{repo}: board {explicit!r} is not a valid board slug")
+        return explicit, display
+    if as_bool(get("board_per_repo"), True):
+        return board_slug(name), display
+    return as_str(get("board"), "").lower(), display
 
 
 def _repo_settings(entry: Any, get: Callable[[str], Any]) -> RepoSettings:
@@ -190,6 +263,7 @@ def _repo_settings(entry: Any, get: Callable[[str], Any]) -> RepoSettings:
     max_runtime = as_str(entry.get("max_runtime"), "") or as_str(get("max_runtime"), "90m")
     if not DURATION_RE.match(max_runtime):
         raise ConfigError(f"{repo}: max_runtime {max_runtime!r} must look like 300, 90m or 2h")
+    board, board_name = _repo_board(entry, repo, get)
     return RepoSettings(
         repo=repo,
         assignee=assignee,
@@ -197,8 +271,15 @@ def _repo_settings(entry: Any, get: Callable[[str], Any]) -> RepoSettings:
         completion_contract=contract,
         branch_prefix=as_str(entry.get("branch_prefix"), "") or as_str(get("branch_prefix"), ""),
         max_runtime=max_runtime,
+        board=board,
+        board_name=board_name,
         lanes=lanes,
     )
+
+
+def _bounded(get: Callable[[str], Any], key: str) -> int:
+    low, high = BOUNDS[key]
+    return as_int(get(key), DEFAULTS[key], minimum=low, maximum=high)
 
 
 def load_settings(get_config: Callable[[str, Any], Any]) -> Settings:
@@ -218,22 +299,29 @@ def load_settings(get_config: Callable[[str, Any], Any]) -> Settings:
         raise ConfigError(f"push_events has unknown events {sorted(unknown)}; use {list(EVENTS)}")
     return Settings(
         repos=repos,
-        board=as_str(get("board"), ""),
+        board_per_repo=as_bool(get("board_per_repo"), True),
+        board=as_str(get("board"), "").lower(),
+        mirror=as_choice(get("mirror"), MIRROR_MODES, "mirror"),
+        epic_label=as_str(get("epic_label"), "epic") or "epic",
+        placeholder_status=as_choice(
+            get("placeholder_status"), PLACEHOLDER_STATUSES, "placeholder_status"
+        ),
+        placeholder_assignee=as_str(get("placeholder_assignee"), "github") or "github",
         ready_label=as_str(get("ready_label"), "agent-ready") or "agent-ready",
         in_progress_label=as_str(get("in_progress_label"), "in-progress") or "in-progress",
         blocked_label=as_str(get("blocked_label"), "blocked") or "blocked",
         skip_labels=tuple(str(s).strip() for s in as_list(get("skip_labels"), ["epic"])),
-        max_cards_per_sync=as_int(get("max_cards_per_sync"), 10),
-        issue_limit=as_int(get("issue_limit"), 100, minimum=1),
+        max_cards_per_sync=_bounded(get, "max_cards_per_sync"),
+        issue_limit=_bounded(get, "issue_limit"),
         sync_on_dispatch_tick=as_bool(get("sync_on_dispatch_tick"), True),
-        sync_interval_seconds=as_int(get("sync_interval_seconds"), 300),
+        sync_interval_seconds=_bounded(get, "sync_interval_seconds"),
         reconcile=as_bool(get("reconcile"), True),
         push_events=events,
-        summary_chars=as_int(get("summary_chars"), 2000),
+        summary_chars=_bounded(get, "summary_chars"),
         card_template=as_str(get("card_template"), ""),
         created_by=as_str(get("created_by"), "github-issues-sync") or "github-issues-sync",
         require_profile_login=as_bool(get("require_profile_login"), False),
-        command_timeout_seconds=as_int(get("command_timeout_seconds"), 30, minimum=1),
+        command_timeout_seconds=_bounded(get, "command_timeout_seconds"),
         gh_bin=as_str(get("gh_bin"), "gh") or "gh",
         hermes_bin=as_str(get("hermes_bin"), "hermes") or "hermes",
     )

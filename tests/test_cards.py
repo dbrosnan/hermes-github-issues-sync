@@ -69,3 +69,27 @@ def test_custom_template_and_fallback_on_bad_template():
     broken = settings(card_template="{missing_field}")
     assert render_card_body(make_issue(), broken.repos[0], broken).count("Rules for this card") == 1
     assert "{url}" in DEFAULT_TEMPLATE
+
+
+def test_kind_marker_and_placeholder_and_epic_bodies():
+    from github_issues_sync.cards import (
+        EPIC,
+        PLACEHOLDER,
+        TASK,
+        card_kind,
+        render_epic_body,
+        render_placeholder_body,
+    )
+
+    s = settings()
+    task = render_card_body(make_issue(), s.repos[0], s)
+    assert task.splitlines()[1] == "<!-- github-issues-sync: kind=task -->"
+    assert card_kind(task) == TASK and card_kind("no marker") == TASK
+    placeholder = render_placeholder_body(make_issue(body="idea"), s, "needs-spec")
+    assert placeholder.startswith("Source issue: https://github.com/acme/widgets/issues/12\n")
+    assert card_kind(placeholder) == PLACEHOLDER
+    assert "Stage on GitHub: needs-spec" in placeholder and "`agent-ready`" in placeholder
+    assert "Fixes #12" not in placeholder and placeholder.rstrip().endswith("idea")
+    epic = render_epic_body(make_issue(), 3)
+    assert card_kind(epic) == EPIC and "3 open sub-issues" in epic
+    assert "1 open sub-issue on" in render_epic_body(make_issue(), 1)

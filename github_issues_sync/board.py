@@ -47,6 +47,46 @@ class Card:
             created_at=raw.get("created_at"),
         )
 
+    @property
+    def busy(self) -> bool:
+        """A worker owns the card, or it has finished: the sync never archives or replaces it."""
+        return self.status in ("running", "review", "done")
+
+
+@dataclass(frozen=True)
+class CardSpec:
+    """Everything ``hermes kanban create`` needs for one card."""
+
+    title: str
+    body: str
+    assignee: str
+    idempotency_key: str
+    workspace: str = "scratch"
+    branch: str = ""
+    max_runtime: str = ""
+    completion_contract: str = "local-only"
+    parents: tuple[str, ...] = ()
+    triage: bool = False
+    initial_status: str = ""  # "blocked" parks the card with a sticky block
+
+    def argv(self, created_by: str) -> list[str]:
+        args = ["create", self.title, "--assignee", self.assignee, "--workspace", self.workspace]
+        if self.branch:
+            args += ["--branch", self.branch]
+        args += ["--idempotency-key", self.idempotency_key]
+        if self.max_runtime:
+            args += ["--max-runtime", self.max_runtime]
+        args += ["--created-by", created_by]
+        if self.completion_contract and self.completion_contract != "local-only":
+            args += ["--completion-contract", self.completion_contract]
+        for parent in self.parents:
+            args += ["--parent", parent]
+        if self.triage:
+            args.append("--triage")
+        if self.initial_status:
+            args += ["--initial-status", self.initial_status]
+        return [*args, "--json"]
+
 
 class HermesBoard:
     def __init__(
@@ -63,14 +103,18 @@ class HermesBoard:
         self._created_by = created_by
         self._run = runner
 
+    @property
+    def board(self) -> str:
+        return self._board
+
     def with_board(self, board: str | None) -> HermesBoard:
         """The same client pointed at ``board`` (a hook payload names the board it fired on)."""
         if not board or board == self._board:
             return self
         return HermesBoard(self._hermes, board, self._timeout, self._created_by, self._run)
 
-    def run(self, args: list[str]) -> str:
-        prefix = ["kanban", "--board", self._board] if self._board else ["kanban"]
+    def run(self, args: list[str], *, scoped: bool = True) -> str:
+        prefix = ["kanban", "--board", self._board] if scoped and self._board else ["kanban"]
         full = [self._hermes, *prefix, *args]
         try:
             result = self._run(
@@ -90,14 +134,34 @@ class HermesBoard:
             raise BoardError(args, result.returncode, result.stderr or "")
         return result.stdout
 
-    def run_json(self, args: list[str]) -> Any:
-        out = self.run(args)
+    def run_json(self, args: list[str], *, scoped: bool = True) -> Any:
+        out = self.run(args, scoped=scoped)
         try:
             return json.loads(out or "null")
         except json.JSONDecodeError as exc:
             raise BoardError(
                 args, 0, f"hermes printed something other than JSON: {out[:200]!r}"
             ) from exc
+
+    # -- boards -------------------------------------------------------------------------------
+
+    def list_boards(self) -> dict[str, dict[str, Any]]:
+        """Slug -> metadata for every unarchived board (``boards list`` ignores ``--board``)."""
+        raw = self.run_json(["boards", "list", "--json"], scoped=False)
+        boards = raw if isinstance(raw, list) else []
+        return {
+            str(item.get("slug")): dict(item)
+            for item in boards
+            if isinstance(item, Mapping) and item.get("slug") and not item.get("archived")
+        }
+
+    def create_board(self, slug: str, name: str, workdir: str = "") -> None:
+        args = ["boards", "create", slug, "--name", name]
+        if workdir:
+            args += ["--default-workdir", workdir]
+        self.run(args, scoped=False)
+
+    # -- cards --------------------------------------------------------------------------------
 
     def list_cards(self) -> list[Card]:
         raw = self.run_json(["list", "--json"])
@@ -119,30 +183,39 @@ class HermesBoard:
         max_runtime: str,
         completion_contract: str,
     ) -> Card:
-        args = [
-            "create",
-            title,
-            "--assignee",
-            assignee,
-            "--workspace",
-            workspace,
-            "--branch",
-            branch,
-            "--idempotency-key",
-            idempotency_key,
-            "--max-runtime",
-            max_runtime,
-            "--created-by",
-            self._created_by,
-            "--json",
-        ]
-        if completion_contract and completion_contract != "local-only":
-            args += ["--completion-contract", completion_contract]
+        return self.create_card(
+            CardSpec(
+                title=title,
+                body=body,
+                assignee=assignee,
+                idempotency_key=idempotency_key,
+                workspace=workspace,
+                branch=branch,
+                max_runtime=max_runtime,
+                completion_contract=completion_contract,
+            )
+        )
+
+    def create_card(self, spec: CardSpec) -> Card:
         with tempfile.TemporaryDirectory(prefix="github-issues-sync-") as tmp:
             body_file = Path(tmp) / "card.md"
-            body_file.write_text(body, encoding="utf-8")
-            raw = self.run_json([*args, "--body-file", str(body_file)])
+            body_file.write_text(spec.body, encoding="utf-8")
+            raw = self.run_json([*spec.argv(self._created_by), "--body-file", str(body_file)])
         return Card.from_json(raw or {})
 
     def comment(self, task_id: str, text: str) -> None:
         self.run(["comment", task_id, text, "--author", self._created_by])
+
+    def archive(self, task_id: str) -> None:
+        self.run(["archive", task_id])
+
+    def link(self, parent_id: str, child_id: str) -> None:
+        """``parent_id`` must finish before ``child_id`` may start."""
+        self.run(["link", parent_id, child_id])
+
+    def block(self, task_id: str, reason: str) -> None:
+        """A sticky block: only ``unblock`` releases it, never the dispatcher's promotion pass."""
+        self.run(["block", task_id, "--kind", "needs_input", reason])
+
+    def unblock(self, task_id: str, reason: str) -> None:
+        self.run(["unblock", task_id, "--reason", reason])

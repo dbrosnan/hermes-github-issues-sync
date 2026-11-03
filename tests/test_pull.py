@@ -54,7 +54,7 @@ def test_sync_creates_cards_for_ready_issues_and_skips_the_rest(fake_cli):
     assert body_file.endswith("card.md")  # temp file; removed after the call
     text = report.render()
     assert "created: acme/widgets#1" in text and "skipped acme/widgets#2: labelled `epic`" in text
-    assert text.endswith("summary: 1 created, 3 skipped, 0 posted, 0 errors")
+    assert text.endswith("summary: 1 created, 0 moved, 3 skipped, 0 posted, 0 errors")
     assert report.to_dict()["created"][0]["card_id"] == "t_1"
 
 
