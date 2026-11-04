@@ -1,5 +1,5 @@
 name: github-issues-sync
-version: 0.3.0
+version: 0.3.1
 description: "Mirror GitHub issues onto Hermes kanban boards, one board per repository and one card per issue (ready tasks, placeholders for the rest, epics linked to their sub-issues), and report claims, handoffs and blocks back on the issue. Pull-based through the gh CLI; the merged PR closes the issue."
 author: Drew Brosnan
 kind: standalone
@@ -14,7 +14,7 @@ config_schema:
   repos: {type: list, default: [], label: "Repositories", description: "GitHub repositories to mirror, as owner/repo strings or maps with repo and any of workspace, assignee, lanes, completion_contract, branch_prefix, max_runtime, board, board_name. Edited as JSON here; YAML in config.yaml."}
   assignee: {type: str, default: "", label: "Assignee profile", description: "Hermes profile that works cards no lane label routes. Required unless lanes or every repo sets its own."}
   workspace_root: {type: str, default: "", label: "Workspace root", description: "Directory holding one checkout per repo (<root>/<repo name>). Cards get a worktree of that checkout. Required unless every repo sets workspace."}
-  lanes: {type: dict, default: {}, label: "Lanes", description: "Issue label to Hermes profile, consulted before assignee: an issue with exactly one of these labels is routed to that profile; with two it is skipped and reported. Per-repo maps can add or override entries."}
+  lanes: {type: dict, default: {}, label: "Lanes", description: "Issue label to Hermes profile, consulted before assignee: an issue with exactly one of these labels is routed to that profile; with two it is skipped and reported. A label may list several profiles ([coder, opus-5-5]): a pool whose member with the fewest open cards gets each new card, so with kanban.max_in_progress_per_profile 1 they work the lane side by side. Per-repo maps can add or override entries."}
   board_per_repo: {type: bool, default: true, label: "One board per repository", description: "Give each repository its own kanban board, named after the repository (slug from the name, display name from board_name), created on first sync with the checkout as the board's project directory. Off: every card goes to the board setting."}
   board: {type: str, default: "", label: "Fallback board", description: "Board slug used when board_per_repo is off and the repo entry sets no board. Empty uses the current board. Must be an existing slug from hermes kanban boards list."}
   mirror: {type: str, default: "ready-only", choices: [ready-only, tasks, full], label: "What to mirror", description: "ready-only: only issues with the ready label become cards (v0.2 behaviour). tasks: every open non-epic issue; the ready ones as work cards, the rest as placeholders that are never dispatched; label changes move cards and a closed issue archives its card. full: tasks plus each epic as a card that waits on its sub-issue cards."}

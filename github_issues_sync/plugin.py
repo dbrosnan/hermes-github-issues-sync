@@ -246,7 +246,9 @@ class Plugin:
                 f"contract {repo.completion_contract}, max runtime {repo.max_runtime}"
             )
             if repo.lanes:
-                routes = ", ".join(f"`{label}` -> {prof}" for label, prof in repo.lanes.items())
+                routes = ", ".join(
+                    f"`{label}` -> {' | '.join(profs)}" for label, profs in repo.lanes.items()
+                )
                 lines.append(f"  lanes: {routes}")
         lines.append(
             f"labels: ready `{s.ready_label}`, in progress `{s.in_progress_label}`, "
