@@ -6,6 +6,22 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-11-04
+
+### Added
+
+- **Lane pools.** A `lanes` entry may list several profiles (`lane:code: [coder, opus-5-5]`).
+  Each new work card goes to the pool member with the fewest open cards (ready, running,
+  review, blocked, todo), ties to the one listed first, counting the cards created earlier in
+  the same sync. With `kanban.max_in_progress_per_profile: 1` and `kanban.max_in_progress` at
+  least the pool size, the members work the lane side by side. `status` prints a pool as
+  `` `lane:code` -> coder | opus-5-5 ``. A single profile per label is unchanged.
+
+### Changed
+
+- `RepoSettings.lanes` values are tuples of profile names (one element for a plain entry).
+  `identity_profile` without an `assignee` is the first profile of the lane that sorts first.
+
 ## [0.3.0] - 2026-11-03
 
 ### Added
@@ -135,7 +151,8 @@ All notable changes to this project are documented here. The format follows
   one, the way Hermes's completion-contract gate does. `require_profile_login` makes a profile
   without its own login an error instead of a fallback to the ambient login.
 
-[Unreleased]: https://github.com/dbrosnan/hermes-github-issues-sync/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/dbrosnan/hermes-github-issues-sync/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/dbrosnan/hermes-github-issues-sync/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/dbrosnan/hermes-github-issues-sync/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/dbrosnan/hermes-github-issues-sync/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/dbrosnan/hermes-github-issues-sync/compare/v0.1.0...v0.1.1

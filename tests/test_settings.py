@@ -106,7 +106,7 @@ def test_lanes_merge_per_repo_over_global_and_make_assignee_optional():
     )
     repo = s.repos[0]
     assert repo.assignee == ""
-    assert dict(repo.lanes) == {"lane:code": "opus", "lane:docs": "writer"}
+    assert dict(repo.lanes) == {"lane:code": ("opus",), "lane:docs": ("writer",)}
     assert repo.identity_profile == "opus"  # no assignee: the lane whose label sorts first
     assert load_settings(getter()).repos[0].identity_profile == "coder"
 
@@ -117,6 +117,10 @@ def test_lanes_merge_per_repo_over_global_and_make_assignee_optional():
         ({"assignee": "", "lanes": {}}, "no assignee profile; set assignee or lanes"),
         ({"lanes": "lane:code=opus"}, "lanes must be a map"),
         ({"lanes": {"lane:code": ""}}, "needs both a label and a profile"),
+        ({"lanes": {"lane:code": []}}, "needs both a label and a profile"),
+        ({"lanes": {"lane:code": ["opus", ""]}}, "needs both a label and a profile"),
+        ({"lanes": {"lane:code": 7}}, "needs both a label and a profile"),
+        ({"lanes": {"lane:code": ["opus", "opus"]}}, "lists a profile twice"),
         ({"repos": [{"repo": "acme/api", "lanes": {"": "opus"}}]}, "acme/api: lanes"),
     ],
 )
@@ -185,3 +189,12 @@ def test_bounds_and_v3_defaults():
     assert s.max_cards_per_sync == 1000 and s.issue_limit == 1
     assert s.sync_interval_seconds == 0 and s.summary_chars == 2000
     assert s.command_timeout_seconds == 1
+
+
+def test_a_lane_may_list_a_pool_of_profiles():
+    s = load_settings(
+        getter({"assignee": "", "lanes": {"lane:code": ["coder", "opus"], "lane:docs": "writer"}})
+    )
+    repo = s.repos[0]
+    assert dict(repo.lanes) == {"lane:code": ("coder", "opus"), "lane:docs": ("writer",)}
+    assert repo.identity_profile == "coder"  # first profile of the lane that sorts first

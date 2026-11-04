@@ -177,8 +177,8 @@ plugins:
             lanes:
               lane:docs: writer                # overrides the global lane for this repo
         assignee: coder                        # the profile for issues with no lane label
-        lanes:                                 # issue label -> Hermes profile
-          lane:code: coder
+        lanes:                                 # issue label -> Hermes profile(s)
+          lane:code: [coder, opus]             # a pool: the member with fewer open cards
           lane:docs: librarian
           lane:research: researcher
           lane:review: reviewer
@@ -236,7 +236,7 @@ Hermes Desktop app under Settings → Plugins → github-issues-sync; the table 
 | `repos` | `[]` | JSON list | Repositories to mirror. Each entry is `owner/repo` or a map with `repo` and any of `workspace`, `assignee`, `lanes`, `completion_contract`, `branch_prefix`, `max_runtime`, `board`, `board_name`. |
 | `assignee` | `""` | text | Hermes profile for issues that no lane label routes. Required unless `lanes` is set or every repo sets its own. |
 | `workspace_root` | `""` | text | Directory holding one checkout per repo. A repo without `workspace` gets `worktree:<root>/<repo name>`. Required unless every repo sets `workspace`. |
-| `lanes` | `{}` | JSON map | Issue label to Hermes profile, consulted before `assignee`. Also allowed per repo entry, where its keys add to or override the global map. An issue with one matching label goes to that profile; with two it is skipped and reported. |
+| `lanes` | `{}` | JSON map | Issue label to Hermes profile, consulted before `assignee`. Also allowed per repo entry, where its keys add to or override the global map. An issue with one matching label goes to that profile; with two it is skipped and reported. A label may list several profiles (`["coder", "opus-5-5"]`): a pool whose member with the fewest open cards takes each new card. |
 | `board_per_repo` | `true` | switch | One board per repository, slug from the repository name (`acme/My.Service` becomes `my-service`), display name `board_name` or the repository name, created on first use with the checkout as project directory. A repo entry's `board` pins an existing slug instead. |
 | `board` | current board | text | Fallback board slug when `board_per_repo` is off and the repo entry sets no `board`. |
 | `mirror` | `ready-only` | dropdown | `ready-only`: only ready issues become cards. `tasks`: every open non-epic issue, ready ones as work cards, the rest as placeholders; label changes move cards, a closed issue archives its card. `full`: `tasks` plus each epic as a card that waits on its sub-issue cards. |
@@ -381,7 +381,10 @@ In `ready-only`, an issue is skipped when it carries a
 a card that `hermes kanban list` returns (which excludes archived cards) already mirrors it, or
 when its lane labels match two `lanes` entries. The rest become cards in the order `gh` returns
 them (newest first by default), up to `max_cards_per_sync`, each assigned to the profile its
-lane label maps to, or to `assignee`:
+lane label maps to, or to `assignee`. A lane that lists several profiles is a pool: the card
+goes to the member with the fewest open cards on the board (counting the ones this sync has
+just planned), ties to the first listed, so two profiles can work one lane side by side under
+Hermes's per-profile cap:
 
 ```
 hermes [--board <slug>] kanban create "acme/widgets#12: Wizard step 1: date range" \

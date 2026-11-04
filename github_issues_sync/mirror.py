@@ -21,7 +21,7 @@ from dataclasses import dataclass, field
 from .board import Card
 from .cards import EPIC, PLACEHOLDER, TASK, IssueRef, card_kind
 from .gh import Issue
-from .selection import Skipped, lane_assignee
+from .selection import Skipped, card_load, lane_assignee, with_card
 from .settings import RepoSettings, Settings
 
 
@@ -67,7 +67,12 @@ def _stage(issue: Issue, settings: Settings) -> str:
     return named[0] if named else "open"
 
 
-def desired_state(issue: Issue, repo: RepoSettings, settings: Settings) -> Desired | Skipped:
+def desired_state(
+    issue: Issue,
+    repo: RepoSettings,
+    settings: Settings,
+    load: Mapping[str, int] | None = None,
+) -> Desired | Skipped:
     """The card ``issue`` should have under the ``tasks`` and ``full`` mirror modes."""
     ref = IssueRef(issue.repo, issue.number)
     if settings.mirrors_epics and issue.has_label(settings.epic_label):
@@ -82,7 +87,7 @@ def desired_state(issue: Issue, repo: RepoSettings, settings: Settings) -> Desir
         return Desired(
             issue, PLACEHOLDER, settings.placeholder_assignee, reason=_stage(issue, settings)
         )
-    assignee, why = lane_assignee(issue, repo)
+    assignee, why = lane_assignee(issue, repo, load)
     if why:
         return Skipped(ref, why)
     if issue.open_blockers:
@@ -154,8 +159,9 @@ def plan_mirror(
         else:
             plan.transitions.append(Transition(ref, "archive", card.id, "issue closed"))
     epics: list[Desired] = []
+    load = card_load(mirrored)
     for issue in issues:
-        state = desired_state(issue, repo, settings)
+        state = desired_state(issue, repo, settings, load)
         if isinstance(state, Skipped):
             plan.skipped.append(state)
             continue
@@ -164,5 +170,7 @@ def plan_mirror(
         if wanted is None:
             continue
         (epics if wanted.kind == EPIC else plan.creates).append(wanted)
+        if wanted.kind == TASK:
+            load = with_card(load, wanted.assignee)
     plan.creates.extend(epics)
     return plan

@@ -124,3 +124,23 @@ def test_plan_moves_cards_when_labels_change():
         (6, "card t_same exists (ready)"),
         (7, "card t_old exists (ready)"),
     ]
+
+
+def test_full_mirror_spreads_a_lane_pool_by_open_cards():
+    s = settings(lanes={"lane:code": ["coder", "opus"]})
+    have = mirrored(
+        {"number": 7, "card": card("t_7", 7, status="review", assignee="opus")},
+        {"number": 8, "card": card("t_8", 8, status="done", assignee="coder")},
+    )
+    issues = [mk(n, labels=("agent-ready", "lane:code")) for n in (1, 2, 3)] + [
+        mk(9, labels=("needs-spec", "lane:code")),
+        mk(7, labels=("agent-ready", "lane:code")),
+        mk(8, labels=("agent-ready", "lane:code")),
+    ]
+    plan = plan_mirror(issues, s.repos[0], s, have)
+    assert [(d.issue.number, d.kind, d.assignee) for d in plan.creates] == [
+        (1, TASK, "coder"),  # opus holds t_7 in review; t_8 is done and does not count
+        (2, TASK, "coder"),  # one each now: the tie goes to the first listed
+        (3, TASK, "opus"),
+        (9, PLACEHOLDER, "github"),
+    ]

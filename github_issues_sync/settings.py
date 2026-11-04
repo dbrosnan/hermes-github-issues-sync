@@ -100,19 +100,37 @@ def as_choice(value: Any, choices: tuple[str, ...], what: str) -> str:
     return chosen
 
 
-def as_map(value: Any, what: str) -> dict[str, str]:
-    """A ``label: profile`` map. Empty keys or values are a config error, not a silent skip."""
+def as_map(value: Any, what: str) -> dict[str, tuple[str, ...]]:
+    """A ``label: profile`` or ``label: [profile, ...]`` map.
+
+    Empty keys or values are a config error, not a silent skip. Several profiles on one label
+    form a pool: each new card goes to the pool member with the fewest open cards.
+    """
     if value is None or value == "":
         return {}
     if not isinstance(value, Mapping):
         raise ConfigError(f"{what} must be a map of issue label to Hermes profile")
-    result: dict[str, str] = {}
+    result: dict[str, tuple[str, ...]] = {}
     for key, profile in value.items():
-        label, name = str(key).strip(), as_str(profile, "")
-        if not label or not name:
+        label = str(key).strip()
+        names = _profile_names(profile)
+        if not label or not names:
             raise ConfigError(f"{what}: entry {key!r} needs both a label and a profile")
-        result[label] = name
+        if len(set(names)) != len(names):
+            raise ConfigError(f"{what}: entry {key!r} lists a profile twice")
+        result[label] = names
     return result
+
+
+def _profile_names(value: Any) -> tuple[str, ...]:
+    """One profile name, or a list of them; anything else (or an empty name) is ``()``."""
+    if isinstance(value, str):
+        name = value.strip()
+        return (name,) if name else ()
+    if isinstance(value, (list, tuple)):
+        names = tuple(str(item).strip() for item in value)
+        return names if names and all(names) else ()
+    return ()
 
 
 def validate_contract(value: str) -> str:
@@ -159,7 +177,7 @@ class RepoSettings:
     max_runtime: str
     board: str = ""  # board slug for this repository's cards; empty means the current board
     board_name: str = ""  # display name used when the board has to be created
-    lanes: Mapping[str, str] = field(default_factory=dict)  # issue label -> Hermes profile
+    lanes: Mapping[str, tuple[str, ...]] = field(default_factory=dict)  # label -> profiles
 
     @property
     def name(self) -> str:
@@ -171,9 +189,9 @@ class RepoSettings:
 
     @property
     def identity_profile(self) -> str:
-        """The profile whose gh identity reads the issue list: the assignee, else the lane whose
-        label sorts first."""
-        return self.assignee or (self.lanes[min(self.lanes)] if self.lanes else "")
+        """The profile whose gh identity reads the issue list: the assignee, else the first
+        profile of the lane whose label sorts first."""
+        return self.assignee or (self.lanes[min(self.lanes)][0] if self.lanes else "")
 
 
 @dataclass(frozen=True)
