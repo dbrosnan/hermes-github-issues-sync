@@ -12,7 +12,7 @@ from typing import Any
 
 logger = logging.getLogger("github_issues_sync")
 
-ISSUE_FIELDS = "number,title,body,url,labels,blockedBy"
+ISSUE_FIELDS = "number,title,body,url,labels,blockedBy,parent"
 NON_INTERACTIVE = {"GH_PROMPT_DISABLED": "1", "GH_NO_UPDATE_NOTIFIER": "1", "NO_COLOR": "1"}
 
 
@@ -35,6 +35,7 @@ class Issue:
     url: str
     labels: tuple[str, ...]
     open_blockers: tuple[int, ...]
+    parent: int | None = None  # the sub-issue's parent issue number, when GitHub reports one
 
     @classmethod
     def from_json(cls, repo: str, raw: Mapping[str, Any]) -> Issue:
@@ -46,6 +47,10 @@ class Issue:
             for node in nodes or []
             if str(node.get("state", "OPEN")).upper() == "OPEN" and node.get("number")
         )
+        parent_raw = raw.get("parent")
+        parent = None
+        if isinstance(parent_raw, Mapping) and parent_raw.get("number"):
+            parent = int(parent_raw["number"])
         return cls(
             repo=repo,
             number=int(raw["number"]),
@@ -54,7 +59,12 @@ class Issue:
             url=str(raw.get("url") or f"https://github.com/{repo}/issues/{raw['number']}"),
             labels=labels,
             open_blockers=blockers,
+            parent=parent,
         )
+
+    def has_label(self, label: str) -> bool:
+        wanted = label.lower()
+        return any(name.lower() == wanted for name in self.labels)
 
 
 @dataclass(frozen=True)
@@ -104,27 +114,26 @@ class GhClient:
         except json.JSONDecodeError as exc:
             raise GhError(args, 0, f"gh printed something other than JSON: {out[:200]!r}") from exc
 
+    def list_issues(
+        self,
+        repo: str,
+        *,
+        label: str = "",
+        limit: int,
+        env: Mapping[str, str] | None = None,
+    ) -> list[Issue]:
+        """Open issues of ``repo``, every one of them or only those carrying ``label``."""
+        args = ["issue", "list", "-R", repo]
+        if label:
+            args += ["--label", label]
+        args += ["--state", "open", "--limit", str(limit), "--json", ISSUE_FIELDS]
+        raw = self.run_json(args, env=env)
+        return [Issue.from_json(repo, item) for item in raw or []]
+
     def list_ready_issues(
         self, repo: str, label: str, limit: int, *, env: Mapping[str, str] | None = None
     ) -> list[Issue]:
-        raw = self.run_json(
-            [
-                "issue",
-                "list",
-                "-R",
-                repo,
-                "--label",
-                label,
-                "--state",
-                "open",
-                "--limit",
-                str(limit),
-                "--json",
-                ISSUE_FIELDS,
-            ],
-            env=env,
-        )
-        return [Issue.from_json(repo, item) for item in raw or []]
+        return self.list_issues(repo, label=label, limit=limit, env=env)
 
     def issue_state(
         self, repo: str, number: int, *, env: Mapping[str, str] | None = None

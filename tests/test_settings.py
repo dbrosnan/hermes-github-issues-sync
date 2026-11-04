@@ -123,3 +123,65 @@ def test_lanes_merge_per_repo_over_global_and_make_assignee_optional():
 def test_lane_errors(overrides, message):
     with pytest.raises(ConfigError, match=message):
         load_settings(getter(overrides))
+
+
+def test_board_per_repo_derives_slugs_and_names():
+    s = load_settings(getter({"board_per_repo": True}))
+    assert (s.repos[0].board, s.repos[0].board_name) == ("widgets", "widgets")
+    assert s.repos[0].checkout == "/srv/checkouts/widgets"
+    s = load_settings(
+        getter(
+            {
+                "board_per_repo": True,
+                "repos": [
+                    {"repo": "acme/My.Service_v2", "board_name": "My Service"},
+                    {"repo": "acme/api", "board": "APIs-Board", "workspace": "dir:/srv/api"},
+                    {"repo": "acme/raw", "workspace": "scratch"},
+                ],
+            }
+        )
+    )
+    assert [(r.board, r.board_name) for r in s.repos] == [
+        ("my-service_v2", "My Service"),
+        ("apis-board", "api"),
+        ("raw", "raw"),
+    ]
+    assert [r.checkout for r in s.repos] == ["/srv/checkouts/My.Service_v2", "/srv/api", ""]
+    assert load_settings(getter({"board": "Shared"})).repos[0].board == "shared"
+
+
+@pytest.mark.parametrize(
+    "overrides,message",
+    [
+        ({"mirror": "everything"}, "mirror 'everything' must be one of ready-only, tasks, full"),
+        ({"placeholder_status": "todo"}, "placeholder_status 'todo' must be one of"),
+        ({"repos": [{"repo": "acme/api", "board": "bad slug"}]}, "not a valid board slug"),
+        ({"board_per_repo": True, "repos": ["acme/---"]}, "cannot derive a board slug"),
+    ],
+)
+def test_v3_setting_errors(overrides, message):
+    with pytest.raises(ConfigError, match=message):
+        load_settings(getter(overrides))
+
+
+def test_bounds_and_v3_defaults():
+    s = load_settings(getter())
+    assert (s.board_per_repo, s.mirror, s.epic_label) == (False, "ready-only", "epic")
+    assert (s.placeholder_status, s.placeholder_assignee) == ("ready", "github")
+    assert s.ready_only and not s.mirrors_epics
+    s = load_settings(
+        getter(
+            {
+                "mirror": "FULL",
+                "max_cards_per_sync": 5000,
+                "issue_limit": 0,
+                "sync_interval_seconds": -5,
+                "summary_chars": "lots",
+                "command_timeout_seconds": 0,
+            }
+        )
+    )
+    assert s.mirror == "full" and s.mirrors_epics
+    assert s.max_cards_per_sync == 1000 and s.issue_limit == 1
+    assert s.sync_interval_seconds == 0 and s.summary_chars == 2000
+    assert s.command_timeout_seconds == 1

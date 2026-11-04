@@ -66,8 +66,14 @@ class FakeCli:
         text = (self.dir / "calls.jsonl").read_text()
         return [json.loads(line) for line in text.splitlines() if line.strip()]
 
-    def calls_for(self, tool: str, *tokens: str) -> list[dict]:
-        return [c for c in self.calls if c["tool"] == tool and all(t in c["argv"] for t in tokens)]
+    def calls_for(self, tool: str, *tokens: str, without: tuple[str, ...] = ()) -> list[dict]:
+        return [
+            c
+            for c in self.calls
+            if c["tool"] == tool
+            and all(t in c["argv"] for t in tokens)
+            and not any(t in c["argv"] for t in without)
+        ]
 
 
 @pytest.fixture
@@ -125,15 +131,21 @@ class FakeCtx:
 
 
 REPO = "acme/widgets"
-SETTINGS = {
+SETTINGS = {  # the v0.2 shape: one board, ready issues only
     "repos": [REPO],
     "assignee": "coder",
     "workspace_root": "/srv/checkouts",
+    "board_per_repo": False,
 }
 
 
 def issue(
-    number: int, title: str = "Do the thing", labels=("agent-ready",), blockers=(), body="Body"
+    number: int,
+    title: str = "Do the thing",
+    labels=("agent-ready",),
+    blockers=(),
+    body="Body",
+    parent: int | None = None,
 ):
     return {
         "number": number,
@@ -141,6 +153,7 @@ def issue(
         "body": body,
         "url": f"https://github.com/{REPO}/issues/{number}",
         "labels": [{"name": name} for name in labels],
+        "parent": {"number": parent, "state": "OPEN"} if parent else None,
         "blockedBy": {
             "nodes": [{"number": n, "state": "OPEN"} for n in blockers],
             "totalCount": len(blockers),
@@ -148,11 +161,19 @@ def issue(
     }
 
 
-def card(task_id: str, number: int, status: str = "ready", assignee: str = "coder", **extra):
+def card(
+    task_id: str,
+    number: int,
+    status: str = "ready",
+    assignee: str = "coder",
+    kind: str = "",
+    **extra,
+):
+    marker = f"\n<!-- github-issues-sync: kind={kind} -->" if kind else ""
     return {
         "id": task_id,
         "title": f"{REPO}#{number}: Do the thing",
-        "body": f"Source issue: https://github.com/{REPO}/issues/{number}\n\nRules",
+        "body": f"Source issue: https://github.com/{REPO}/issues/{number}{marker}\n\nRules",
         "status": status,
         "assignee": assignee,
         "created_at": 1000 + number,
@@ -160,12 +181,12 @@ def card(task_id: str, number: int, status: str = "ready", assignee: str = "code
     }
 
 
-def show(task: dict, *, runs=(), events=(), latest_summary=None):
+def show(task: dict, *, runs=(), events=(), latest_summary=None, parents=(), children=()):
     return {
         "task": task,
         "latest_summary": latest_summary,
-        "parents": [],
-        "children": [],
+        "parents": list(parents),
+        "children": list(children),
         "comments": [],
         "events": list(events),
         "runs": list(runs),
